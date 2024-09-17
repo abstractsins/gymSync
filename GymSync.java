@@ -1,20 +1,20 @@
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.FileTime;
-import java.time.LocalDate;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class GymSync {
-
     // Hard coded device ID we want to match
     static final String deviceId = "R3CR702TVAH"; 
     // File name to transfer
@@ -24,9 +24,15 @@ public class GymSync {
     // Local directory to copy to
     static final String destinationPath = "D:/Projects/gymRecords/";
     // Local file name - file name to rename
-    static final String localFile = "gymRecords.txt"; 
+    static final String localFile = "gymRecords.txt";
 
-    private static boolean deviceCheck() {
+    private static Consumer<String> logCallback;
+    // Method to set the logging callback
+    public static void setLogCallback(Consumer<String> logCallback) {
+        GymSync.logCallback = logCallback;
+    }
+
+    public static boolean deviceCheck() {
         Pattern pattern = Pattern.compile(deviceId);
 
         try {
@@ -61,7 +67,7 @@ public class GymSync {
         return false;
     }
 
-    private static boolean fileCheck() {
+    public static boolean fileCheck() {
         Pattern pattern = Pattern.compile(fileSource);
         String command = "adb -s " + deviceId + " shell ls " + androidSource;
         String[] commandArray = command.split(" ");
@@ -98,8 +104,8 @@ public class GymSync {
         return false;
     }
 
-    private static void fileTransfer() {
-        System.out.println(">>> Initiating file transfer.");
+    public static void fileTransfer() {
+        logCallback.accept(">>> Initiating file transfer.");
 
         try {
             String command = "adb -s " + deviceId + " pull " + androidSource + fileSource + " " + destinationPath;
@@ -108,7 +114,7 @@ public class GymSync {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    System.out.println(line);
+                    logCallback.accept(line);
                 }
             }
 
@@ -116,7 +122,7 @@ public class GymSync {
             if (exitCode != 0) {
                 System.err.println("File transfer failed with exit code: " + exitCode);
             } else {
-                System.out.println("File transfer complete.");
+                logCallback.accept("File transfer complete.");
             }
 
         } catch (IOException e) {
@@ -129,7 +135,7 @@ public class GymSync {
         }
     }
 
-    private static void oldFileRename() {
+    public static void oldFileRename() {
         Path filePath = Paths.get(destinationPath + localFile);
         
         try {
@@ -140,7 +146,7 @@ public class GymSync {
             Path backupFilePath = Paths.get(destinationPath + backupFileName);
 
             Files.move(filePath, backupFilePath, StandardCopyOption.REPLACE_EXISTING);
-            System.out.println("+++ Old file renamed successfully: " + backupFileName);
+            logCallback.accept("+++ Old file renamed successfully: " + backupFileName);
 
         } catch (IOException e) {
             System.err.println("IOException occurred while renaming the old file: " + e.getMessage());
@@ -148,13 +154,13 @@ public class GymSync {
         }
     }
 
-    private static void newFileRename() {
+    public static void newFileRename() {
         Path filePath = Paths.get(destinationPath + fileSource);
         
         try {
             Path newFilePath = Paths.get(destinationPath + localFile);
             Files.move(filePath, newFilePath, StandardCopyOption.REPLACE_EXISTING);
-            System.out.println("+++ New file renamed successfully: " + localFile);
+            logCallback.accept("+++ New file renamed successfully: " + localFile);
 
         } catch (IOException e) {
             System.err.println("IOException occurred while renaming the new file: " + e.getMessage());
@@ -162,14 +168,14 @@ public class GymSync {
         }
     }
 
-    private static void removeAndroidFile() { 
+    public static void removeAndroidFile() { 
         String command = "adb -s " + deviceId + " shell rm " + androidSource + fileSource;
         try {
             Process process = new ProcessBuilder(command.split(" ")).start();
             process.waitFor(); // Ensure the process completes
             int exitCode = process.exitValue();
             if (exitCode == 0) {
-                System.out.println("+++ Android file removed successfully: " + fileSource);
+                logCallback.accept("+++ Android file removed successfully: " + fileSource);
             } else {
                 System.err.println("Failed to remove Android file with exit code: " + exitCode);
             }
@@ -183,38 +189,17 @@ public class GymSync {
         }
     }
 
-    private static void fileManagement() {
+    public static void fileManagement() {
         oldFileRename();
         newFileRename();
         removeAndroidFile();
     }
     
     public String toString() {
-        String str = "--- Looking for file: " + fileSource;
-        str += "\n--- on source device: " + deviceId;
+
+        String str = "Press Transfer to update gym records";
+
         return str;
     }
         
-    public static void main(String[] args) {
-        System.out.println("##### PROGRAM START #####");
-        GymSync gymSync = new GymSync();
-        System.out.println(gymSync);
-        
-        boolean isDeviceConnected = deviceCheck();
-        if (isDeviceConnected) {
-            System.out.println(">>> Device has been found.");
-            boolean doesFileExist = fileCheck();
-            if (doesFileExist) {
-                System.out.println(">>> File has been found.");
-                fileTransfer();
-                fileManagement();
-            } else {
-                System.out.println("!!! File was not found!");
-            }
-        } else {
-            System.out.println("!!! Device not found.");
-        }
-        
-        System.out.println("##### PROGRAM END #####");
-    }
 }

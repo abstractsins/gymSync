@@ -1,0 +1,166 @@
+import java.awt.*;
+import java.awt.event.*;
+import java.beans.*;
+import javax.swing.*;
+
+public class App extends JPanel implements ActionListener, PropertyChangeListener {
+    
+    public static JFrame frame;
+    private JProgressBar progressBar;
+    private JButton startButton;
+    private JButton graphButton;
+    private JButton closeButton;
+    private JTextArea taskOutput;
+    // private Task task;
+    private static JTextArea textArea;
+    
+    // GymSync
+    GymSync gymSync = new GymSync();
+    
+    // construct the app
+    public App() {
+        super(new BorderLayout());
+        buildGui();
+    }
+
+    public void actionPerformed(ActionEvent e) {
+        String command = e.getActionCommand();
+
+        switch (command) {
+            case "start":
+                transferStart();
+                break;
+            case "close":
+                System.exit(0);
+                break;
+            default:
+                throw new AssertionError();
+        }
+    };
+
+    public void buildGui() {
+        taskOutput = new JTextArea(5, 20);
+        taskOutput.setMargin(new Insets(5,5,5,5));
+        taskOutput.setEditable(false);
+
+        System.out.println(gymSync.toString());
+        taskOutput.append(gymSync.toString()+"\n");
+                
+        //Create the demo's UI.
+        startButton = new JButton("Transfer");
+        startButton.setActionCommand("start");
+       
+        progressBar = new JProgressBar(0, 100);
+        progressBar.setValue(0);
+        
+        graphButton = new JButton("Open Graph");
+        graphButton.setActionCommand("graph");
+        
+        closeButton = new JButton("Close");
+        closeButton.setActionCommand("close");
+        
+        startButton.addActionListener(this);
+        graphButton.addActionListener(this);
+        closeButton.addActionListener(this);
+
+        //Call setStringPainted now so that the progress bar height
+        //stays the same whether or not the string is shown.
+        progressBar.setStringPainted(true); 
+
+        // Create a text area
+        textArea = new JTextArea();
+        textArea.setEditable(false); // Make it read-only
+
+        JPanel panel1 = new JPanel();
+        panel1.add(startButton);
+        panel1.add(progressBar);
+
+        JPanel panel2 = new JPanel();
+        panel2.add(graphButton);
+        panel2.add(closeButton);
+
+        add(panel1, BorderLayout.PAGE_START);
+        add(new JScrollPane(taskOutput), BorderLayout.CENTER);
+        add(panel2, BorderLayout.PAGE_END);
+        setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        
+        Font newFont = new Font("Consolas", Font.PLAIN, 16);
+        taskOutput.setFont(newFont);
+    }
+
+    public void transferStart() {
+        int task = 0;
+        progressBar.setValue(0);
+        progressBar.setIndeterminate(false);
+
+        String intro = "Looking for file: " + gymSync.fileSource;
+        intro += " on source device: " + gymSync.deviceId + "...\n";
+
+        System.out.println(intro);
+        taskOutput.append("\n" + intro);
+        
+        boolean isDeviceConnected = gymSync.deviceCheck();
+        task++;
+        progressBar.setValue(25);
+
+        if (isDeviceConnected) {
+            System.out.println(">>> Device has been found.");
+            taskOutput.append(">>> Device has been found.\n");
+
+            boolean doesFileExist = gymSync.fileCheck();
+            task++;
+            progressBar.setValue(50);
+
+            if (doesFileExist) {
+                System.out.println(">>> File has been found.");
+                taskOutput.append(">>> File has been found.\n");
+                gymSync.fileTransfer();
+                task++;
+                progressBar.setValue(75);
+
+                gymSync.fileManagement();
+                task++;
+                progressBar.setValue(100);
+
+            } else {
+                progressBar.setIndeterminate(true);
+                System.out.println("!!! File was not found!");
+                taskOutput.append("!!! File was not found!\n");
+            }
+        } else {
+            progressBar.setIndeterminate(true);
+            System.out.println("!!! Device not found.");
+            taskOutput.append("!!! Device not found.\n");
+        }
+    }
+
+    /**
+     * Create the GUI and show it. As with all GUI code, this must run
+     * on the event-dispatching thread.
+     */
+    public static void createAndShowGUI() {
+        //Create and set up the window.
+        frame = new JFrame("Gym Progress Tracker");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        // frame.setIconImage(new ImageIcon(imgURL).getImage());
+        
+        //Create and set up the content pane.
+        JComponent newContentPane = new App();
+        newContentPane.setOpaque(true); //content panes must be opaque
+        frame.setContentPane(newContentPane);
+        
+        //Display the window.
+        frame.pack();
+        frame.setLocationRelativeTo(null);
+        frame.setVisible(true);
+        frame.setSize(600, 400);
+    }
+    
+    /**
+     * Invoked when task's progress property changes.
+     */
+    public void propertyChange(PropertyChangeEvent evt) {
+        System.out.println("Property changed: " + evt.getPropertyName());
+    }
+}
+            

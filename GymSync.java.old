@@ -1,0 +1,139 @@
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class GymSync {
+    // Constants for configuration
+    static final String DEVICE_ID = "R3CR702TVAH"; 
+    static final String FILE_SOURCE = "Gym.txt";
+    static final String ANDROID_SOURCE = "/sdcard/Documents/";
+    static final String DESTINATION_PATH = "D:/Projects/gymRecords/";
+    static final String LOCAL_FILE = "gymRecords.txt";
+
+    // Helper method to execute a shell command and return output as a StringBuilder
+    private static StringBuilder executeCommand(String[] command) throws IOException, InterruptedException {
+        Process process = new ProcessBuilder(command).start();
+        StringBuilder output = new StringBuilder();
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append("\n");
+            }
+        }
+
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            System.err.println("Command failed with exit code: " + exitCode);
+        }
+
+        return output;
+    }
+
+    public static boolean deviceCheck() {
+        String[] command = {"adb", "devices"};
+        Pattern pattern = Pattern.compile(DEVICE_ID);
+
+        try {
+            StringBuilder output = executeCommand(command);
+
+            Matcher matcher = pattern.matcher(output);
+            return matcher.find();  // Device ID found
+        } catch (IOException | InterruptedException e) {
+            System.err.println("Error during device check: " + e.getMessage());
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    public static boolean fileCheck() {
+        String[] command = {"adb", "-s", DEVICE_ID, "shell", "ls", ANDROID_SOURCE};
+        Pattern pattern = Pattern.compile(FILE_SOURCE);
+
+        try {
+            StringBuilder output = executeCommand(command);
+
+            Matcher matcher = pattern.matcher(output);
+            return matcher.find();  // File found
+        } catch (IOException | InterruptedException e) {
+            System.err.println("Error during file check: " + e.getMessage());
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    public static void fileTransfer() {
+        System.out.println(">>> Initiating file transfer.");
+        String[] command = {"adb", "-s", DEVICE_ID, "pull", ANDROID_SOURCE + FILE_SOURCE, DESTINATION_PATH};
+
+        try {
+            executeCommand(command);
+            System.out.println("File transfer complete.");
+        } catch (IOException | InterruptedException e) {
+            System.err.println("Error during file transfer: " + e.getMessage());
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void renameFile(Path oldFilePath, String newFileName) throws IOException {
+        Path newFilePath = Paths.get(DESTINATION_PATH + newFileName);
+        Files.move(oldFilePath, newFilePath, StandardCopyOption.REPLACE_EXISTING);
+        System.out.println("+++ File renamed successfully: " + newFileName);
+    }
+
+    public static void oldFileRename() {
+        Path oldFilePath = Paths.get(DESTINATION_PATH + LOCAL_FILE);
+        try {
+            BasicFileAttributes attributes = Files.readAttributes(oldFilePath, BasicFileAttributes.class);
+            FileTime creationTime = attributes.creationTime();
+            LocalDate creationDate = Instant.ofEpochMilli(creationTime.toMillis())
+                                            .atZone(ZoneId.systemDefault())
+                                            .toLocalDate();
+
+            String backupFileName = "gymRecords " + creationDate + ".txt";
+            renameFile(oldFilePath, backupFileName);
+
+        } catch (IOException e) {
+            System.err.println("Error renaming old file: " + e.getMessage());
+        }
+    }
+
+    public static void newFileRename() {
+        Path oldFilePath = Paths.get(DESTINATION_PATH + FILE_SOURCE);
+        try {
+            renameFile(oldFilePath, LOCAL_FILE);
+        } catch (IOException e) {
+            System.err.println("Error renaming new file: " + e.getMessage());
+        }
+    }
+
+    public static void removeAndroidFile() { 
+        String[] command = {"adb", "-s", DEVICE_ID, "shell", "rm", ANDROID_SOURCE + FILE_SOURCE};
+        try {
+            executeCommand(command);
+            System.out.println("+++ Android file removed successfully: " + FILE_SOURCE);
+        } catch (IOException | InterruptedException e) {
+            System.err.println("Error removing Android file: " + e.getMessage());
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    public static void fileManagement() {
+        oldFileRename();
+        newFileRename();
+        removeAndroidFile();
+    }
+
+    @Override
+    public String toString() {
+        return "Press Transfer to update gym records";
+    }
+}
