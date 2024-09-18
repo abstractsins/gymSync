@@ -1,31 +1,35 @@
-import java.awt.*;
-import java.awt.event.*;
-import java.beans.*;
-import java.net.InetSocketAddress;
-
-import javax.swing.*;
-import com.sun.net.httpserver.HttpServer;
-import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpExchange;
-
-import java.nio.file.Files;
-
-import java.io.*;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
+import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.BindException;
+import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.file.Files;
+import javax.swing.*;
+import javax.swing.text.*;
 
 public class App extends JPanel implements ActionListener, PropertyChangeListener {
     
     private static JFrame frame;
     private JProgressBar progressBar;
-    private JTextArea taskOutput;
-    
-    // GymSync instance
-    public GymSync gymSync = new GymSync();
-    
+    private JTextPane textPane;
+    private StyledDocument doc;
+    private final GymSync gymSync = new GymSync();
+
     public App() {
         super(new BorderLayout());
         buildGui();
-        GymSync.setLogCallback(this::logMessage);  // Set the logging callback method'
+        GymSync.setLogCallback(this::logNormalMessage);
+        GymSync.setErrorLogCallback(this::logErrorMessage);
     }
 
     @Override
@@ -33,46 +37,39 @@ public class App extends JPanel implements ActionListener, PropertyChangeListene
         switch (e.getActionCommand()) {
             case "start" -> transferStart();
             case "close" -> System.exit(0);
-            case "graph" -> {
-                try {
-                   openGraph();
-                } catch (Exception ex) {
-                    ex.printStackTrace();  // Handle the exception (e.g., log it or show an error message)
-                }
-            }
+            case "graph" -> openGraphSafely();
             default -> throw new UnsupportedOperationException("Unsupported command: " + e.getActionCommand());
         }
     }
 
     private void buildGui() {
-        taskOutput = createTextArea();
+        textPane = createTextPane();
         progressBar = createProgressBar();
 
-        JButton startButton = createButton("Transfer", "start");
-        JButton graphButton = createButton("Open Graph", "graph");
-        JButton closeButton = createButton("Close", "close");
+        JPanel panel1 = createButtonPanel(
+            createButton("Transfer", "start"),
+            progressBar
+        );
 
-        JPanel panel1 = new JPanel();
-        panel1.add(startButton);
-        panel1.add(progressBar);
-
-        JPanel panel2 = new JPanel();
-        panel2.add(graphButton);
-        panel2.add(closeButton);
+        JPanel panel2 = createButtonPanel(
+            createButton("Open Graph", "graph"),
+            createButton("Close", "close")
+        );
 
         add(panel1, BorderLayout.PAGE_START);
-        add(new JScrollPane(taskOutput), BorderLayout.CENTER);
+        add(new JScrollPane(textPane), BorderLayout.CENTER);
         add(panel2, BorderLayout.PAGE_END);
         setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        logNormalMessage(gymSync.toString());
     }
 
-    private JTextArea createTextArea() {
-        JTextArea textArea = new JTextArea(5, 20);
-        textArea.setMargin(new Insets(5, 5, 5, 5));
-        textArea.setEditable(false);
-        textArea.setFont(new Font("Consolas", Font.PLAIN, 16));
-        textArea.append(gymSync.toString() + "\n");
-        return textArea;
+    private JTextPane createTextPane() {
+        JTextPane pane = new JTextPane();
+        pane.setEditable(false);
+        pane.setFont(new Font("Consolas", Font.BOLD, 16));
+        doc = pane.getStyledDocument();
+        return pane;
     }
 
     private JProgressBar createProgressBar() {
@@ -89,83 +86,120 @@ public class App extends JPanel implements ActionListener, PropertyChangeListene
         return button;
     }
 
-    private void transferStart() {
-        taskOutput.setText("");
-        progressBar.setValue(0);
-        progressBar.setIndeterminate(false);
+    private JPanel createButtonPanel(JComponent... components) {
+        JPanel panel = new JPanel();
+        for (JComponent component : components) {
+            panel.add(component);
+        }
+        return panel;
+    }
 
-        String intro = "Looking for file: " + gymSync.fileSource + " on source device: " + gymSync.deviceId + "...\n";
-        logMessage(intro);
+    private void transferStart() {
+        clearLog();
+        resetProgress();
+
+        logNormalMessage("Looking for file: " + GymSync.fileSource + " on source device: " + GymSync.deviceId + "...\n");
 
         if (GymSync.deviceCheck()) {
-
-            logMessage("Device has been found...");
-            progressBar.setValue(25);
+            logNormalMessage("Device has been found...");
+            updateProgress(25);
 
             if (GymSync.fileCheck()) {
-                logMessage("File has been found...");
-                progressBar.setValue(50);
-                gymSync.fileTransfer();
-                progressBar.setValue(75);
-                gymSync.fileManagement();
-                progressBar.setValue(100);
+                logNormalMessage("File has been found...");
+                updateProgress(50);
+
+                GymSync.fileTransfer();
+                updateProgress(75);
+
+                GymSync.fileManagement();
+                updateProgress(100);
             } else {
-                logError("Error: File was not found!");
+                logErrorMessage("Error: File was not found!");
             }
         } else {
-            logError("Error: Device not found!");
+            logErrorMessage("Error: Device not found!");
         }
     }
 
-    public void logMessage(String message, String type) {
-        if (type.equals("error")) {
-            System.err.println(message);
-            taskOutput.append(message + "\n");
-        } else {
-            System.out.println(message);
-        }
-        taskOutput.append(message + "\n");
+    private void logNormalMessage(String message) {
+        logMessage(message, null);
     }
 
-    public void logError(String message) {
+    private void logErrorMessage(String message) {
         progressBar.setIndeterminate(true);
-        logMessage(message, "error");
+        logMessage(message, getErrorStyle());
     }
 
-    private void openGraph() throws Exception {
-        // Handle graph opening logic
-        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
-
-        server.createContext("/", new HttpHandler() {
-            @Override
-            public void handle(HttpExchange exchange) throws IOException {
-                String root = "D:/projects/gymRecords";
-                String path = exchange.getRequestURI().getPath();
-
-                if (path.equals("/")) {
-                    path = "/index.html";
-                }
-
-                File file = new File(root + path);
-                if (file.exists() && !file.isDirectory()) {
-                    exchange.sendResponseHeaders(200, file.length());
-                    OutputStream os = exchange.getResponseBody();
-                    Files.copy(file.toPath(), os);
-                    os.close();
-                } else {
-                    String response = "404 (Not Found)\n";
-                    exchange.sendResponseHeaders(404, response.length());
-                    OutputStream os = exchange.getResponseBody();
-                    os.write(response.getBytes());
-                    os.close();
-                }
+    private void logMessage(String message, Style style) {
+        try {
+            doc.insertString(doc.getLength(), message + "\n", style);
+            if (style == null) {
+                System.out.println(message);
+            } else {
+                System.err.println(message);
             }
-        });
+        } catch (BadLocationException e) {
+            e.printStackTrace();
+        }
+    }
 
+    private Style getErrorStyle() {
+        Style errorStyle = textPane.addStyle("Error Style", null);
+        StyleConstants.setForeground(errorStyle, Color.RED);
+        return errorStyle;
+    }
+
+    private void resetProgress() {
+        progressBar.setValue(0);
+        progressBar.setIndeterminate(false);
+    }
+
+    private void updateProgress(int value) {
+        progressBar.setValue(value);
+    }
+
+    private void clearLog() {
+        textPane.setText("");
+    }
+        
+    private void openGraphSafely() {
+        try {
+            openGraph();
+        } catch (BindException e) {
+            logErrorMessage("Port 8080 is already in use. Trying to open the browser anyway.");
+            openBrowserSafely();
+        } catch (Exception e) {
+            logAndHandleException("An error occurred while opening the graph", e);
+            openBrowserSafely();
+        }
+    }
+
+    private void openBrowserSafely() {
+        try {
+            openBrowser();
+        } catch (Exception e) {
+            logAndHandleException("An error occurred while opening the browser", e);
+        }
+    }
+
+    private void openBrowser() throws Exception {
+        if (Desktop.isDesktopSupported()) {
+            Desktop.getDesktop().browse(new URI("http://localhost:8080"));
+        }
+    }
+
+    private void logAndHandleException(String message, Exception e) {
+        logErrorMessage(message + ": " + e.getMessage());
+        e.printStackTrace();
+    }
+
+    private void openGraph() throws IOException, URISyntaxException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+        server.createContext("/", new FileHandler());
         server.start();
-        logMessage("Server started on port 8080");
+        logNormalMessage("\nServer started on port 8080");
 
-        if(Desktop.isDesktopSupported()) {
+        if (Desktop.isDesktopSupported()) {
             Desktop.getDesktop().browse(new URI("http://localhost:8080"));
         }
     }
@@ -173,16 +207,38 @@ public class App extends JPanel implements ActionListener, PropertyChangeListene
     public static void createAndShowGUI() {
         frame = new JFrame("Gym Progress Tracker");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        JComponent contentPane = new App();
-        frame.setContentPane(contentPane);
+        frame.setContentPane(new App());
         frame.pack();
         frame.setLocationRelativeTo(null);
-        frame.setVisible(true);
         frame.setSize(600, 400);
+        frame.setVisible(true);
     }
 
     @Override
     public void propertyChange(PropertyChangeEvent evt) {
         System.out.println("Property changed: " + evt.getPropertyName());
+    }
+
+    static class FileHandler implements HttpHandler {
+        private static final String ROOT_DIR = "D:/projects/gymRecords";
+
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            String path = exchange.getRequestURI().getPath().equals("/") ? "/index.html" : exchange.getRequestURI().getPath();
+            File file = new File(ROOT_DIR + path);
+
+            if (file.exists() && !file.isDirectory()) {
+                exchange.sendResponseHeaders(200, file.length());
+                try (OutputStream os = exchange.getResponseBody()) {
+                    Files.copy(file.toPath(), os);
+                }
+            } else {
+                String response = "404 (Not Found)\n";
+                exchange.sendResponseHeaders(404, response.length());
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(response.getBytes());
+                }
+            }
+        }
     }
 }

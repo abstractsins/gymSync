@@ -32,6 +32,12 @@ public class GymSync {
         GymSync.logCallback = logCallback;
     }
 
+    private static Consumer<String> errorLogCallback;
+    // Method to set the logging callback
+    public static void setErrorLogCallback(Consumer<String> errorLogCallback) {
+        GymSync.errorLogCallback = errorLogCallback;
+    }
+
     public static boolean deviceCheck() {
         Pattern pattern = Pattern.compile(deviceId);
 
@@ -52,14 +58,14 @@ public class GymSync {
 
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                System.err.println("Process terminated with non-zero exit code: " + exitCode);
+                errorLogCallback.accept("Process terminated with non-zero exit code: " + exitCode);
             }
 
         } catch (IOException e) {
-            System.err.println("IOException occurred: " + e.getMessage());
+            errorLogCallback.accept("IOException occurred: " + e.getMessage());
             e.printStackTrace();
         } catch (InterruptedException e) {
-            System.err.println("Process was interrupted: " + e.getMessage());
+            errorLogCallback.accept("Process was interrupted: " + e.getMessage());
             e.printStackTrace();
             Thread.currentThread().interrupt();
         }
@@ -89,14 +95,15 @@ public class GymSync {
 
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                System.err.println("Process terminated with non-zero exit code: " + exitCode);
+                errorLogCallback.accept("Process terminated with non-zero exit code: " + exitCode);
             }
 
         } catch (IOException e) {
-            System.err.println("IOException occurred: " + e.getMessage());
+            errorLogCallback.accept("IOException occurred: " + e.getMessage());
+
             e.printStackTrace();
         } catch (InterruptedException e) {
-            System.err.println("Process was interrupted: " + e.getMessage());
+            errorLogCallback.accept("Process was interrupted: " + e.getMessage());
             e.printStackTrace();
             Thread.currentThread().interrupt();
         }
@@ -105,7 +112,7 @@ public class GymSync {
     }
 
     public static void fileTransfer() {
-        logCallback.accept(">>> Initiating file transfer.");
+        logCallback.accept("Initiating file transfer...\n");
 
         try {
             String command = "adb -s " + deviceId + " pull " + androidSource + fileSource + " " + destinationPath;
@@ -120,16 +127,16 @@ public class GymSync {
 
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                System.err.println("File transfer failed with exit code: " + exitCode);
+                errorLogCallback.accept("File transfer failed with exit code: " + exitCode);
             } else {
                 logCallback.accept("File transfer complete.");
             }
 
         } catch (IOException e) {
-            System.err.println("IOException occurred during file transfer: " + e.getMessage());
+            errorLogCallback.accept("IOException occurred during file transfer: " + e.getMessage());
             e.printStackTrace();
         } catch (InterruptedException e) {
-            System.err.println("File transfer was interrupted: " + e.getMessage());
+            errorLogCallback.accept("File transfer was interrupted: " + e.getMessage());
             e.printStackTrace();
             Thread.currentThread().interrupt();
         }
@@ -146,10 +153,10 @@ public class GymSync {
             Path backupFilePath = Paths.get(destinationPath + backupFileName);
 
             Files.move(filePath, backupFilePath, StandardCopyOption.REPLACE_EXISTING);
-            logCallback.accept("+++ Old file renamed successfully: " + backupFileName);
+            logCallback.accept("Old file renamed successfully: " + backupFileName);
 
         } catch (IOException e) {
-            System.err.println("IOException occurred while renaming the old file: " + e.getMessage());
+            errorLogCallback.accept("IOException occurred while renaming the old file: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -160,10 +167,10 @@ public class GymSync {
         try {
             Path newFilePath = Paths.get(destinationPath + localFile);
             Files.move(filePath, newFilePath, StandardCopyOption.REPLACE_EXISTING);
-            logCallback.accept("+++ New file renamed successfully: " + localFile);
+            logCallback.accept("New file renamed successfully: " + localFile);
 
         } catch (IOException e) {
-            System.err.println("IOException occurred while renaming the new file: " + e.getMessage());
+            errorLogCallback.accept("IOException occurred while renaming the new file: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -175,15 +182,15 @@ public class GymSync {
             process.waitFor(); // Ensure the process completes
             int exitCode = process.exitValue();
             if (exitCode == 0) {
-                logCallback.accept("+++ Android file removed successfully: " + fileSource);
+                logCallback.accept("Android file removed successfully: " + fileSource);
             } else {
-                System.err.println("Failed to remove Android file with exit code: " + exitCode);
+                errorLogCallback.accept("Failed to remove Android file with exit code: " + exitCode);
             }
         } catch (IOException e) {
-            System.err.println("IOException occurred while removing Android file: " + e.getMessage());
+            errorLogCallback.accept("IOException occurred while removing Android file: " + e.getMessage());
             e.printStackTrace();
         } catch (InterruptedException e) {
-            System.err.println("File removal was interrupted: " + e.getMessage());
+            errorLogCallback.accept("File removal was interrupted: " + e.getMessage());
             e.printStackTrace();
             Thread.currentThread().interrupt();
         }
@@ -195,6 +202,7 @@ public class GymSync {
         removeAndroidFile();
     }
     
+    @Override
     public String toString() {
 
         String str = "Press Transfer to update gym records";
